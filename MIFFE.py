@@ -8,36 +8,26 @@ Created on Mon Feb 27 14:40:01 2023
 ---------------------------------------------------
 MIFFE stands for Most Incredible Function File Ever
 ---------------------------------------------------
-    
-import os
-from pathlib import Path
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from PIL import Image
-
-import imageio.v2 as imageio
-#import imageio
-module_path = r'/Users/vincentchouinard/Documents/GitHub/Widefield-Imaging-analysis'
-sys.path.insert(1,module_path)
-from motion_correction_caiman import *
-from WFmovie import WFmovie
-from WFmovie import create_channel
-from WFmovie import regress_timeseries
-
-from PyQt5.QtWidgets import QFileDialog, QApplication
-import tifffile
-   
-sys.path.insert stuff is hardcoded but it needs to be modified for your local folder
-leading to the GitHub/Widefield-Imaging-analysis. Modify WFmovie_path to your local path.
-Ex: 
-module_path_chouine = r'/Users/vincentchouinard/Documents/GitHub/Widefield-Imaging-analysis/Chouine'
-sys.path.insert(2, module_path_chouine)
-import ce .py file dans ton projet.
- 
-
--------------------------------------
 """
+
+import numpy as np
+from PIL import Image
+import os
+import sys
+import tifffile as tf
+from tqdm import tqdm
+from PyQt5.QtWidgets import QFileDialog, QApplication
+
+sys.path.insert(1, module_path)
+from motion_correction_caiman import get_wf_mc_params, correct_motion_directory
+import imageio.v2 as imageio
+
+sys.path.insert(1,WFmovie_path)
+from pathlib import Path
+from WFmovie import WFmovie, create_channel, ioi_epsilon_pathlength
+
+
+
 
 #Hardcoded paths needed for functions to work properly
 CaImAn_path = r'/Users/vincentchouinard/Documents/GitHub/Widefield-Imaging-analysis/Chouine'
@@ -47,7 +37,7 @@ background_path = r'' #if needed
 
 
 def search_path(path_type='folder'):
-    from PyQt5.QtWidgets import QFileDialog, QApplication
+
     from pathlib import Path
     
     if path_type == 'folder':
@@ -74,15 +64,7 @@ def create_movies(data_path, channels, **kwargs):
     
     Function has no output, but it creates an object named 'movies'. Its content is a list of movies of the specified 
     colors listed in 'channels' argument. """
-    import sys
-    sys.path.insert(1,WFmovie_path)
-    from pathlib import Path
-    from WFmovie import WFmovie
-    from WFmovie import create_channel
-    from WFmovie import regress_timeseries
-    import numpy as np
-    from PIL import Image
-    
+
     data_path = Path(data_path)
 
     # Hardcoded values of every parameter
@@ -162,16 +144,8 @@ def create_movies(data_path, channels, **kwargs):
 
 
 def generate_data_folder(movie, folderpath, channel, module_path = CaImAn_path, tif=False, CaImAn=False, numpy=False):
-    #Creates a folder in which movie is transformed to 
-    import os
-    from pathlib import Path
-    import sys
-    sys.path.insert(1,module_path)
-    from motion_correction_caiman import get_wf_mc_params, correct_motion_directory
-    import imageio.v2 as imageio
-    import numpy as np
-    
-    
+
+    #Creates a folder in which movie is transformed to
     Correction_folder_name = 'Correction'
     newfolderpath = "".join([folderpath,  '/', Correction_folder_name])
     newfolderpath = Path(newfolderpath)
@@ -210,7 +184,6 @@ def generate_data_folder(movie, folderpath, channel, module_path = CaImAn_path, 
 
 
 def bin_pixels(frame, bin_size):
-    import numpy as np
     height, width = frame.shape[:2]
     binned_height = height // bin_size
     binned_width = width // bin_size
@@ -223,14 +196,6 @@ def bin_pixels(frame, bin_size):
     return binned_frame
 
 def convert_to_hb(path_green, path_red, output_path, baseline=None, bin_size=2):
-    import tifffile as tf
-    import numpy as np
-    import sys
-    sys.path.insert(1, WFmovie_path)
-    from WFmovie import WFmovie
-    from WFmovie import ioi_epsilon_pathlength
-    from tqdm import tqdm
-
 
     with tf.TiffFile(path_green) as tifG, tf.TiffFile(path_red) as tifR:
         R_green = tifG.pages
@@ -293,9 +258,9 @@ def convert_to_hb(path_green, path_red, output_path, baseline=None, bin_size=2):
     return None
 
 def normalize_by_baseline(data, freq, baseline_time):
-    import numpy as np
     """Normalize each frame by the baseline mean. baseline_time is in seconds.
     Baseline frames are taken at the start of the acquisition."""
+    
     nframes = int(freq*baseline_time)
     data = data / np.mean(data[0:nframes], axis=0)
     return data
