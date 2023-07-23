@@ -17,22 +17,22 @@ import sys
 import tifffile as tf
 from tqdm import tqdm
 from PyQt5.QtWidgets import QFileDialog, QApplication
-
-sys.path.insert(1, module_path)
-from motion_correction_caiman import get_wf_mc_params, correct_motion_directory
 import imageio.v2 as imageio
+from pathlib import Path
+
+
+#Hardcoded paths needed for imported modules
+CaImAn_path = r'/Users/vincentchouinard/Documents/GitHub/WideField/Chouine'
+WFmovie_path = r'/Users/vincentchouinard/Documents/GitHub/Widefield-Imaging-analysis'
+
+sys.path.insert(1, CaImAn_path)
+from motion_correction_caiman import get_wf_mc_params, correct_motion_directory
+
 
 sys.path.insert(1,WFmovie_path)
-from pathlib import Path
 from WFmovie import WFmovie, create_channel, ioi_epsilon_pathlength
 
 
-
-
-#Hardcoded paths needed for functions to work properly
-CaImAn_path = r'/Users/vincentchouinard/Documents/GitHub/Widefield-Imaging-analysis/Chouine'
-WFmovie_path = r'/Users/vincentchouinard/Documents/GitHub/Widefield-Imaging-analysis'
-background_path = r'' #if needed
 
 
 
@@ -149,9 +149,8 @@ def generate_data_folder(movie, folderpath, channel, module_path = CaImAn_path, 
     Correction_folder_name = 'Correction'
     newfolderpath = "".join([folderpath,  '/', Correction_folder_name])
     newfolderpath = Path(newfolderpath)
-    path = os.path.normpath(folderpath)
-    pathlist = path.split(os.sep)
-    filename = "".join([pathlist[-1], "_", channel[0], '_movie', '.tif'])
+    filename = "".join([channel, '_movie', '.tif'])
+
     
     if not os.path.exists(newfolderpath):
         os.makedirs(newfolderpath)
@@ -170,7 +169,7 @@ def generate_data_folder(movie, folderpath, channel, module_path = CaImAn_path, 
         correct_motion_directory(CaImAn_folder_path, parameters, keywords=['.tif'])
         
     if numpy:
-        npyfilename = Path("".join(['corrected_', pathlist[-1], "_", channel[0], '_movie', '.npy']))
+        npyfilename = Path("".join(['corrected_', channel, '_movie', '.npy']))
         newnpypath = newfolderpath / npyfilename
         corrected_tif_filename = "".join(['corrected_', filename])
         corrected_tif_path = newfolderpath / corrected_tif_filename
@@ -201,7 +200,7 @@ def convert_to_hb(path_green, path_red, output_path, baseline=None, bin_size=2):
         R_green = tifG.pages
         R_red = tifR.pages
 
-        num_frames = len(R_green)  # Assuming the frames are along the first dimension
+        num_frames = len(R_green)  # Assuming the frames are along the first dimensiona
         binned_frame = bin_pixels(R_green[0].asarray(), bin_size)
         frame_shape = binned_frame.shape
         stack_shape = (num_frames, frame_shape[0], frame_shape[1])
