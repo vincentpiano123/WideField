@@ -263,3 +263,39 @@ def normalize_by_baseline(data, freq, baseline_time):
     nframes = int(freq*baseline_time)
     data = data / np.mean(data[0:nframes], axis=0)
     return data
+
+
+import cv2
+import tifffile as tiff
+import numpy as np
+from tqdm import tqdm
+
+
+def convert_to_grayscale(input_file, output_file, frame_range):
+    video = cv2.VideoCapture(input_file)
+    total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    output_file_template = output_file.replace('.tif', '_{}.tif')
+
+    current_frame = frame_range[0]
+    file_counter = 0
+
+    while current_frame < frame_range[1]:
+        output_file = output_file_template.format(file_counter)
+        print(output_file)
+        with tiff.TiffWriter(output_file, bigtiff=True) as tiff_writer:
+            for _ in tqdm(range(3000)):
+                video.set(cv2.CAP_PROP_POS_FRAMES, current_frame)
+                ret, frame = video.read()
+
+                frame = frame[:, 420:1500]
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                tiff_writer.write(frame, contiguous=True)
+
+                current_frame += 1
+                if current_frame > frame_range[1]:
+                    break
+
+            file_counter += 1
+
+    video.release()
