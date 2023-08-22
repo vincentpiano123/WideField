@@ -299,3 +299,37 @@ def convert_to_grayscale(input_file, output_file, frame_range):
             file_counter += 1
 
     video.release()
+
+
+def create_hb_data(g_path, r_path, data_path, baseline, directory = "Hb_data", bin_size = 2):
+    # Directory
+    parent_dir = data_path
+
+    # Path
+    save_path = os.path.join(parent_dir, directory)
+
+    if not os.path.exists(save_path):
+        # Create the directory
+        os.mkdir(save_path)
+        print("Directory '% s' created." % directory)
+
+    else:
+        print("Directory '% s' already exists." % directory)
+
+    current_path = os.getcwd()
+    os.chdir(WFmovie_path)
+    convert_to_hb(g_path, r_path, save_path, baseline=baseline, bin_size=bin_size)
+    os.chdir(current_path)
+
+    print("Done! dHbO/dHbR/dHbT .tifs are now saved in Hb_data.")
+
+
+def fit_signal(signal1, signal2):
+    """Fit one-dimensional signal1 to signal2 using simple inversion of a linear matrix equation.
+    Returns: fit coefficients (a, b) and fit signal a * signal1 + b."""
+    signal1 = np.expand_dims(signal1.flatten(), axis=1)  # (N x 1) vector
+    signal2 = np.expand_dims(signal2.flatten(), axis=1)  # (N x 1) vector
+    vectors = np.concatenate([signal1, np.ones((signal1.shape[0], 1))], axis=1)  # (N x 2) matrix
+    coeffs = (np.linalg.pinv(vectors) @ signal2).flatten()
+    fit = coeffs[0] * signal1 + coeffs[1]
+    return coeffs, fit
