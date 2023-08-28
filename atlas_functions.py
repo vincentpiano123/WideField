@@ -15,6 +15,9 @@ from PIL import Image
 import ants
 import nrrd
 import cv2
+from MIFFE import search_path
+from scipy.signal import medfilt
+
 
 def open_AllenSDK(reference_space_key='annotation/ccf_2017'):
     # Opens every variable necessary for analysis. 
@@ -120,42 +123,6 @@ def create_contour(structure, uint8 = True): #Contours in horizontal (h) and ver
     return np.where(contours!=0, 1, 0).astype(np.uint8)
 
 
-#def search_for_file_path():
-#    root = tk.Tk()
-#    root.withdraw() #use to hide tkinter window
-#    root.update()
-#    currdir = os.getcwd()
-#    tempdir = filedialog.askdirectory(parent=root, initialdir=currdir, title='Please select a directory')
-#    if len(tempdir) > 0:
-#        print ("You chose: %s" % tempdir)
-#    root.destroy()
-#    return tempdir
-
-
-def search_path(path_type='folder'):
-    from PyQt5.QtWidgets import QFileDialog, QApplication
-
-    app_test = QApplication.instance()
-    if app_test is None:
-        app = QApplication([])
-    else:
-        print("app exists bro")
-
-    if path_type == 'folder':
-        folder_selected = QFileDialog.getExistingDirectory()
-        print ("You chose: %s" % folder_selected)
-        app.quit()
-        del app
-        return folder_selected
-
-    if path_type == 'file':
-        file_selected = QFileDialog.getOpenFileName()[0]
-        print("You chose: %s" % file_selected)
-        app.quit()
-        del app
-        return file_selected
-
-
 def identify_files(path, keywords):
     items = os.listdir(path)
     files = []
@@ -224,56 +191,36 @@ def select_mask(image):
     cv2.destroyAllWindows()
     return mask
 
-#Unfinished function.
-#def save_mask(mask, folderName, name):
-#    # Saves a mask as a numpy array in the chosen directory, or creates a new directory if it doesn't exist.
-#
-#    # Changes mask type to uint8
-#    if mask.dtype != np.dtype('uint8'):
-#        mask = mask.astype(np.uint8)
-#
-#    # Creates directory:
-#    if not os.path.exists(folderName):
-#        os.mkdir(folderName)
-#    else:
-#        print('Directory already exists.')
 
-    
-#   path = search_for_file_path()
-#    np.save(path + '/' + folderName + '/' + name + '.np', mask)
-#    nrrd.write(path + '/' + folderName + '/' + name + '.nrrd', mask)
-#    return
+def intensity_bounds(im, kernelsize=11, percentile=0.01):
+    # Removes pixel intensity aberations, finds optimized bounds for a certain image. kernelsize is for filter
+    # and percentile is to determine what's the intensity threshold of a normalized intensity distribution.
+    flat = im.flatten()
+    flat = medfilt(flat, kernel_size=kernelsize)
+    min_range, max_range = np.min(flat), np.max(flat)
+    flat_mean, flat_std = np.mean(flat), np.std(flat)
+
+    def gaussian(x, mean, std):
+        return np.exp(-(x - mean) ** 2 / (2 * std ** 2))
+
+    x = np.linspace(min_range, max_range, 1000)
+    y = gaussian(x, flat_mean, flat_std)
+
+    value_range = np.where(y > percentile)
+
+    vmin = value_range[0][0]
+    vmax = x[value_range[0][-1]]
+
+    return vmin, vmax
 
 
-# Some sample numpy data
-# data = np.zeros((5,4,3,2))
-# filename = 'testdata.nrrd'
-
-# Write to a NRRD file
-# nrrd.write(filename, data)
-
-# Read the data back from file
-# readdata, header = nrrd.read(filename)
-# print(readdata.shape)
-# print(header)
-
-#file_path_variable = search_for_file_path()
-#print ("\nfile_path_variable = ", file_path_variable)
-
-#rsp, tree = open_AllenSDK()
-#isocortex_map, id_name_dict, bregma = map_generator(rsp, tree, structure='Isocortex')
-#fig, ax = plt.subplots(figsize=(10, 10))
-#sma_mask = create_mask(isocortex_map, 656)
-#contour = create_contour(isocortex_map)
-#plt.imshow(isocortex_map,vmax=1300, cmap='gray', alpha=0.5)
-#plt.imshow(contour, cmap='binary_r')
-#plt.show()
-
-#mask_list = []
-#for i in id_name_dict:
-#    mask_list.append(i)
-
-#newmask = create_mask(isocortex_map, mask_list)
-#plt.imshow(newmask, cmap='binary_r')
-#plt.show()
-
+def mask_gradient(mask , n):
+    # bottom-up gradient over a mask
+    row = np.ones(mask[0].shape)*n
+    for i in reversed(range(mask.shape[0])):
+        for j in range(mask.shape[1]):
+            if mask[i,j] == 1:
+                mask[i,j] = row[j]
+                if row[j] > 1:
+                    row[j] += -1
+    return mask

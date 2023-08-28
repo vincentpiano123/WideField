@@ -19,6 +19,7 @@ from tqdm import tqdm
 from PyQt5.QtWidgets import QFileDialog, QApplication
 import imageio.v2 as imageio
 from pathlib import Path
+from tkinter import Tk, filedialog
 
 
 #Hardcoded paths needed for imported modules
@@ -33,22 +34,18 @@ sys.path.insert(1,WFmovie_path)
 from WFmovie import WFmovie, create_channel, ioi_epsilon_pathlength
 
 
-
-
-
 def search_path(path_type='folder'):
+    root = Tk()
+    root.withdraw()  # to hide the main window
 
-    from pathlib import Path
-    
     if path_type == 'folder':
-        app = QApplication([])
-        folder_selected = QFileDialog.getExistingDirectory()
-        print ("You chose: %s" % folder_selected)
+        folder_selected = filedialog.askdirectory()
+        print("You chose:", folder_selected)
         return folder_selected
-    if path_type == 'file':
-        app = QApplication([])
-        file_selected = QFileDialog.getOpenFileName()[0]
-        print("You chose: %s" % file_selected)
+
+    elif path_type == 'file':
+        file_selected = filedialog.askopenfilename()
+        print("You chose:", file_selected)
         return file_selected
 
 
@@ -250,6 +247,8 @@ def convert_to_hb(path_green, path_red, output_path, baseline=None, bin_size=2):
                 np.nan_to_num(d_HbR, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
                 d_HbT = d_HbO + d_HbR
 
+
+
                 writerHbO.write(np.float32(d_HbO), contiguous=True)
                 writerHbR.write(np.float32(d_HbR), contiguous=True)
                 writerHbT.write(np.float32(d_HbT), contiguous=True)
@@ -272,6 +271,7 @@ from tqdm import tqdm
 
 
 def convert_to_grayscale(input_file, output_file, frame_range):
+
     video = cv2.VideoCapture(input_file)
     total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
 
@@ -322,6 +322,9 @@ def create_hb_data(g_path, r_path, data_path, baseline, directory = "Hb_data", b
     os.chdir(current_path)
 
     print("Done! dHbO/dHbR/dHbT .tifs are now saved in Hb_data.")
+
+
+### This section is for functions not directly related to basic
 
 
 def fit_signal(signal1, signal2):
