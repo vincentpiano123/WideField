@@ -231,7 +231,7 @@ def find_background_mode(data_path, video_type="video", verbose=True, save=True,
     if skip > 1:
         N_selected = int(N_frames / skip)
         selected_frames = np.linspace(0, N_frames, N_selected, endpoint=False).astype('int')
-        for i in tqdm(selected_frames, file=sys.stdout):
+        for i in tqdm(selected_frames, file=sys.stdout, desc='Finding Background:'):
             video.set(1, i)
             _, frame = video.read()
             counts = update_counts(counts, frame[:, :, 0].astype(np.uint8))
@@ -293,7 +293,8 @@ def substract_background_with_array(data_path):
         background_substracted_frame = cv2.absdiff(frame_gray, background)
         blurred_bsf = cv2.GaussianBlur(background_substracted_frame, (3, 3), 1)
 
-        out.write(blurred_bsf)
+        rgb_frame = np.repeat(blurred_bsf[:, :, np.newaxis], 3, axis=2)
+        out.write(rgb_frame)
 
     cap.release()
     out.release()
@@ -498,7 +499,7 @@ def crop_video_and_depth(behavior_folder, coords=[], radius_of_crop=130):
     #     offset = np.array([-41.77996883, -19.86813022])
     affine_matrix_cv2 = np.hstack([affine_matrix, offset.reshape(-1, 1)])
 
-    for frame in tqdm(depth_arr, desc="Transforming depth to video space"):
+    for frame in depth_arr:
         transformed_frame = cv2.warpAffine(frame, affine_matrix_cv2, (frame.shape[1], frame.shape[0]))
         transformed_depth_arr.append(transformed_frame)
     transformed_depth_arr = np.array(transformed_depth_arr)
@@ -602,7 +603,7 @@ def binarize_video(data_path):
 
         total_frames = int(cap2.get(cv2.CAP_PROP_FRAME_COUNT))
 
-        for i in tqdm(range(0, total_frames, skip_frames)):
+        for i in range(0, total_frames, skip_frames):
             cap2.set(cv2.CAP_PROP_POS_FRAMES, i)
             ret, frame = cap2.read()
             if not ret:
@@ -661,7 +662,7 @@ def compute_centroids(dataset_path):
         centroids = np.zeros((n_frames, 2), dtype=np.int16)
 
         # Process the stack frame by frame
-        for i in tqdm(range(n_frames)):
+        for i in range(n_frames):
             # Read the current frame
             frame = tif.pages[i].asarray()
 
@@ -710,7 +711,7 @@ def save_mask_depth(dataset_path):
             return
 
         # Process each frame
-        for i in tqdm(range(total_frames)):
+        for i in range(total_frames):
             mask_frame = tif.pages[i].asarray()
             ret, depth_frame = depth_cap.read()
             depth_frame = depth_frame[:, :, 0]
@@ -729,7 +730,7 @@ def save_mask_depth(dataset_path):
     # Release the video writer and capture objects
     out.release()
     depth_cap.release()
-    print("Processing complete. Result saved as 'depth_mask.avi' in dataset path.")
+    print("Depth data saved as 'depth_mask.avi'.")
     return None
 
 
@@ -773,7 +774,7 @@ def obtain_depth(dataset_path, edge=10):
     # Process each frame
     mean_values = np.zeros(total_frames)
     last_value = None
-    for i in tqdm(range(total_frames)):
+    for i in range(total_frames):
         ret, frame = cap.read()
         frame = frame[:, :, 0]
 
@@ -801,7 +802,7 @@ def count_pixels(dataset_path):
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     a = np.zeros(total_frames)
-    for i in tqdm(range(total_frames)):
+    for i in range(total_frames):
         ret, frame = cap.read()
         gray_scale_frame = frame[:, :, 0]
         a[i] = np.count_nonzero(gray_scale_frame)
