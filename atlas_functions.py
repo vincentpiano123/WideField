@@ -489,7 +489,7 @@ def intensity_bounds(im, kernelsize=11, percentile=0.01):
     return rescaled_im, vmin, vmax
 
 
-def registration(registration_path, data_folder, data_file, overwrite = False, display_first = False):
+def registration(surgery_img_path, data_folder, data_file, overwrite = False, display_first = False):
     '''
     REGISTRATION_PATH is the folder in which every surgery image will be put under the folder associated with a
     specific mouse. The folder is named after the mouse ID like so : registration_folder_path / M38 / Surgery.png .
@@ -507,12 +507,7 @@ def registration(registration_path, data_folder, data_file, overwrite = False, d
 
     # obtain the surgery mask
 
-    img_list = identify_files(registration_path, keywords=['.jpg'])
-    if len(img_list) > 1:
-        raise Exception(
-            "Sorry, only the cortical_surgery_image.jpg is supposed to be in '{}'. ".format(str(registration_path)))
-    else:
-        surgery_image = cv2.imread(registration_path + '/' + img_list[0])
+    surgery_image = cv2.imread(surgery_img_path)
 
     # SELECTS A MASK and outputs a binary npy
 
