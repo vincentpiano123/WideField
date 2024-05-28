@@ -7,9 +7,12 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from collections import deque
 import os
+import re
 import sys
 import pickle
 
+from scipy.ndimage import gaussian_filter1d
+from pathlib import Path
 from tqdm.notebook import tqdm
 from numba import njit, prange
 import tifffile as tiff
@@ -231,12 +234,12 @@ def find_background_mode(data_path, video_type="video", verbose=True, save=True,
     if skip > 1:
         N_selected = int(N_frames / skip)
         selected_frames = np.linspace(0, N_frames, N_selected, endpoint=False).astype('int')
-        for i in tqdm(selected_frames, file=sys.stdout, desc='Finding Background:'):
+        for i in selected_frames:
             video.set(1, i)
             _, frame = video.read()
             counts = update_counts(counts, frame[:, :, 0].astype(np.uint8))
     else:
-        for _ in tqdm(range(1, N_frames), file=sys.stdout):
+        for _ in range(1, N_frames):
             _, frame = video.read()
             counts = update_counts(counts, frame[:, :, 0])
     video.release()
@@ -264,7 +267,7 @@ def update_counts(counts, frame):
     return counts
 
 
-def substract_background_with_array(data_path):
+def substract_background_with_array(data_path, verbose=True):
     video_path = data_path + "/cropped_video.avi"
     background_path = data_path + "/background.tif"
 
@@ -298,7 +301,8 @@ def substract_background_with_array(data_path):
 
     cap.release()
     out.release()
-    print(f"Output video saved to {output_video_path}")
+    if verbose:
+        print(f"Output video saved to {output_video_path}")
 
 
 
@@ -454,7 +458,7 @@ def crop_data(arr, coords, radius_of_crop, mask_value=0):
     return arr[:, roi[0]:roi[1], roi[2]:roi[3]]
 
 
-def crop_video_and_depth(behavior_folder, coords=[], radius_of_crop=130):
+def crop_video_and_depth(behavior_folder, coords=[], radius_of_crop=130, verbose=True, trsfm = 'v1'):
     video_path = os.path.join(behavior_folder, "video.avi")
     depth_path = os.path.join(behavior_folder, "depth.avi")
 
@@ -477,7 +481,7 @@ def crop_video_and_depth(behavior_folder, coords=[], radius_of_crop=130):
     out = cv2.VideoWriter(output_video_path, fourcc, 31.0, (arr.shape[2], arr.shape[1]))
 
     # Process and write the frames with tqdm
-    for i in tqdm(range(arr.shape[0]), desc="Processing video"):
+    for i in range(arr.shape[0]):
         frame = arr[i]
         rgb_frame = np.repeat(frame[:, :, np.newaxis], 3, axis=2)
         out.write(rgb_frame)
@@ -487,20 +491,31 @@ def crop_video_and_depth(behavior_folder, coords=[], radius_of_crop=130):
 
     del arr
 
-    print(f"Output video saved to {output_video_path}")
+    if verbose:
+        print(f"Output video saved to {output_video_path}")
 
     depth_arr = avi_to_array(depth_path)
 
     # Apply the transformation to the entire stack
     transformed_depth_arr = []
-    affine_matrix = np.array([[0.92, 0.], [0., 0.92]])
-    offset = np.array([13., 34.])
-    #     affine_matrix = np.array([[1.10195914, 0.        ], [0.        , 1.10195914]])
-    #     offset = np.array([-41.77996883, -19.86813022])
-    affine_matrix_cv2 = np.hstack([affine_matrix, offset.reshape(-1, 1)])
+    if trsfm == 'v1':
+        affine_matrix = np.array([[0.92, 0.], [0., 0.92]])
+        offset = np.array([13., 34.])
+        #     affine_matrix = np.array([[1.10195914, 0.        ], [0.        , 1.10195914]])
+        #     offset = np.array([-41.77996883, -19.86813022])
+        affine_matrix_cv2 = np.hstack([affine_matrix, offset.reshape(-1, 1)])
+    elif trsfm == 'v2':
+        affine_matrix = np.array([[1.11, 0.], [0., 1.12]])
+        offset = np.array([132, -22])
+        affine_matrix_cv2 = np.hstack([affine_matrix, offset.reshape(-1, 1)])
+    else:
+        print("Error: trsfm isn't 'v1' or 'v2'. Please define it.")
 
     for frame in depth_arr:
-        transformed_frame = cv2.warpAffine(frame, affine_matrix_cv2, (frame.shape[1], frame.shape[0]))
+        if trsfm == 'v1':
+            transformed_frame = cv2.warpAffine(frame, affine_matrix_cv2, (frame.shape[1], frame.shape[0]))
+        elif trsfm == 'v2':
+            transformed_frame = cv2.warpAffine(frame, affine_matrix_cv2, (frame.shape[1]+offset[0], frame.shape[0]))
         transformed_depth_arr.append(transformed_frame)
     transformed_depth_arr = np.array(transformed_depth_arr)
 
@@ -513,14 +528,15 @@ def crop_video_and_depth(behavior_folder, coords=[], radius_of_crop=130):
     out2 = cv2.VideoWriter(output_depth_path, fourcc2, 31.0, (cropped_depth_arr.shape[2], cropped_depth_arr.shape[1]))
 
     # Process and write the depth frames with tqdm
-    for i in tqdm(range(cropped_depth_arr.shape[0]), desc="Processing depth"):
+    for i in range(cropped_depth_arr.shape[0]):
         frame = cropped_depth_arr[i]
         rgb_frame = np.repeat(frame[:, :, np.newaxis], 3, axis=2)
         out2.write(rgb_frame)
 
     # Release the video writer objects
     out2.release()
-    print(f"Output depth saved to {output_depth_path}")
+    if verbose:
+        print(f"Output depth saved to {output_depth_path}")
 
     return None
 
@@ -574,7 +590,7 @@ def select_center(video_path, verbose=True):
     return coords_array
 
 
-def binarize_video(data_path):
+def binarize_video(data_path, verbose=True):
     file_path = os.path.join(data_path, "bg_sub_cropped_video.avi")
     output_path = os.path.join(data_path, "mask_video.tif")
 
@@ -623,7 +639,7 @@ def binarize_video(data_path):
     kernel = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
 
     with tiff.TiffWriter(output_path) as tif:
-        for i in tqdm(range(total_frames), desc=f"Binarizing {os.path.basename(output_path)}"):
+        for i in range(total_frames):
             ret, frame = cap.read()
             if not ret:
                 break
@@ -649,7 +665,8 @@ def binarize_video(data_path):
             tif.write(final_mask)
 
     cap.release()
-    print(f"Output saved to {output_path}")
+    if verbose:
+        print(f"Output saved to {output_path}")
 
 
 def compute_centroids(dataset_path):
@@ -681,7 +698,7 @@ def compute_centroids(dataset_path):
     return centroids
 
 
-def save_mask_depth(dataset_path):
+def save_mask_depth(dataset_path, verbose=True):
     # Paths
     mask_path = dataset_path + "/mask_video.tif"
     depth_path = dataset_path + "/cropped_depth.avi"
@@ -730,7 +747,8 @@ def save_mask_depth(dataset_path):
     # Release the video writer and capture objects
     out.release()
     depth_cap.release()
-    print("Depth data saved as 'depth_mask.avi'.")
+    if verbose:
+        print("Depth data saved as 'depth_mask.avi'.")
     return None
 
 
@@ -870,6 +888,141 @@ def load_dict(file_path):
     with open(file_path, 'rb') as file:
         loaded_dict = pickle.load(file)
     return loaded_dict
+
+
+def behavior_preprocessing(dataset_list, coord_filter_sigma = 1.0, verbose=False, transform = 'v1'):
+    roi = []
+    for i in range(len(dataset_list)):
+        # Premake rectangles to crop
+        roi.append(select_center(dataset_list[i] + "/video.avi", verbose=verbose))
+
+    for i in tqdm(range(len(dataset_list)), desc="Batch processing"):
+
+        # crop (with premade rectangles in coords)
+        crop_video_and_depth(dataset_list[i], roi[i], verbose=verbose, trsfm = transform)
+
+        # Substract background
+        find_background_mode(dataset_list[i], verbose=False)
+        substract_background_with_array(dataset_list[i], verbose=verbose)
+
+        # Binarize
+        binarize_video(dataset_list[i], verbose=verbose)
+
+        # Saving video mask to use with depth and coords
+        save_mask_depth(dataset_list[i], verbose=verbose)
+
+        # Computing centroids
+        xy_coords = compute_centroids(dataset_list[i])
+
+        # Obtaining depth for z
+        z_coord = obtain_depth(dataset_list[i])
+
+        # Filter and combine x,y and z
+        x, y, z = gaussian_filter1d(xy_coords[:, 0], coord_filter_sigma), gaussian_filter1d(xy_coords[:, 1], coord_filter_sigma), gaussian_filter1d(
+            z_coord, coord_filter_sigma)
+        z = detrend_linear2d(x, y, z)
+        coords = np.column_stack((x, y, z))
+
+        del xy_coords, z_coord, x, y, z
+
+        # saving coordinate dictionary with pickle
+        coords_dict = {}
+        coords_dict['coords'] = coords
+
+        folderpath = Path(dataset_list[i])
+        metadatapath = folderpath.joinpath("metadata.pkl")
+
+        save_dict(str(metadatapath), coords_dict)
+        if verbose:
+            print('Processing of {} is completed.'.format(str(Path(dataset_list[i]).name)))
+
+    return None
+
+
+def open_coords(dataset_list, experiment_time=600, camera_freq=30, order='list_ordered', verbose=True, remove_tuples = []):
+    n_datasets = len(dataset_list)
+    coord_stack = np.zeros((experiment_time * camera_freq, 3, n_datasets-len(remove_tuples)))
+    dataset_info = []  # For storing parsed dataset info including paths, session, mouse ids, and padding
+
+    # Correct the order in each tuple so 'S' values are before 'M' values
+    corrected_tuples = []
+    for tup in remove_tuples:
+        if tup[0].startswith('S') and tup[1].startswith('M'):
+            # Swap elements if 'M' is before 'S'
+            corrected_tuples.append((tup[1], tup[0]))
+        else:
+            corrected_tuples.append(tup)
+
+    remove_count = 0
+    for i, dataset_path in enumerate(dataset_list):
+        skip=False
+
+        mouse, session = re.search(r".*/BH_M(\d+)_S(\d+)", dataset_path).groups()
+        for j in range(len(corrected_tuples)):
+            if ('M' + mouse, 'S' + session) == corrected_tuples[j]:
+                skip = True
+                break
+
+        if skip:
+            remove_count += 1
+            continue
+
+        coord_dict = load_dict(dataset_path + "/metadata.pkl")
+        coord = coord_dict['coords']
+        padding_needed = coord_stack.shape[0] - coord.shape[0]
+
+        dataset_info.append({
+            'path': dataset_path,
+            'session': int(session),
+            'mouse': int(mouse),
+            'index': i-remove_count,
+            'padding': padding_needed
+        })
+
+        if padding_needed > 0:
+            coord_padded = np.pad(coord, ((0, padding_needed), (0, 0)), mode='edge')
+            if padding_needed > 50 and verbose:
+                print(os.path.basename(dataset_path) + f" is too short. It's {padding_needed} values shorter than normal.")
+        elif padding_needed < 0:
+            coord_padded = coord[-padding_needed:, :]
+        else:
+            coord_padded = coord
+
+        coord_stack[:, :, i-remove_count] = coord_padded
+
+    # Ordering logic
+    if order == 'session_ordered':
+        dataset_info.sort(key=lambda x: (x['session'], x['mouse']))
+    elif order == "mouse_ordered":
+        dataset_info.sort(key=lambda x: (x['mouse'], x['session']))
+    elif order != 'list_ordered':
+        raise ValueError('Order is not "list_ordered", "session_ordered" or "mouse_ordered".')
+
+    # If ordering is needed, reorder coord_stack according to sorted dataset_info
+    if order in ['session_ordered', 'mouse_ordered']:
+        sorted_indices = [info['index'] for info in dataset_info]
+        ordered_stack = coord_stack[:, :, sorted_indices]
+    else:
+        ordered_stack = coord_stack
+
+    return ordered_stack, dataset_info
+
+
+def total_movement(coord):
+    # Select x,y only
+    coordinates = np.copy(coord[:, :2])
+
+    # Calculate the differences between consecutive coordinates
+    differences = np.diff(coordinates.astype(np.float32()), axis=0)
+
+    # Calculate the Euclidean distance for each pair of points
+    distances = np.sqrt(np.sum(differences ** 2, axis=1))
+
+    # Sum up the distances to get the total movement
+    total_distance = np.sum(distances)
+
+    return total_distance
+
 # ---------------------------------------------------------------------------------------------------------------------
 # ---------------------------------------------------------------------------------------------------------------------
 # ---------------------------------------------------------------------------------------------------------------------
@@ -878,7 +1031,7 @@ def load_dict(file_path):
 
 # ARCHIVED
 
-def archived_crop_video_and_depth(behavior_folder, rectangle=None):
+def archived_crop_video_and_depth(behavior_folder, rectangle=None, verbose=True, transform='v1'):
     def get_first_frame_and_count(file_path):
         cap = cv2.VideoCapture(file_path)
         if not cap.isOpened():
@@ -906,7 +1059,7 @@ def archived_crop_video_and_depth(behavior_folder, rectangle=None):
         return image[int(rectangle[1]):int(rectangle[1] + rectangle[3]),
                int(rectangle[0]):int(rectangle[0] + rectangle[2])]
 
-    def process_video(file_path, output_path, rectangle):
+    def process_video(file_path, output_path, rectangle, verbose=verbose):
         cap = cv2.VideoCapture(file_path)
         if not cap.isOpened():
             print(f"Error: Could not open file {file_path}.")
@@ -922,12 +1075,23 @@ def archived_crop_video_and_depth(behavior_folder, rectangle=None):
             out.write(cropped_frame)
         cap.release()
         out.release()
-        print(f"Output saved to {output_path}")
+        if verbose:
+            print(f"Output saved to {output_path}")
 
-    def process_depth(file_path, output_path, rectangle):
-        affine_matrix = np.array([[0.92, 0.], [0., 0.92]])
-        offset = np.array([13., 34.])
-        affine_matrix_cv2 = np.hstack([affine_matrix, offset.reshape(-1, 1)])
+    def process_depth(file_path, output_path, rectangle, trsfm, verbose=verbose):
+        if trsfm == 'v1':
+            affine_matrix = np.array([[0.92, 0.], [0., 0.92]])
+            offset = np.array([13., 34.])
+            affine_matrix_cv2 = np.hstack([affine_matrix, offset.reshape(-1, 1)])
+
+        elif trsfm == 'v2':
+            affine_matrix = np.array([[1.11, 0.], [0., 1.12]])
+            offset = np.array([132, -22])
+            affine_matrix_cv2 = np.hstack([affine_matrix, offset.reshape(-1, 1)])
+
+        else:
+            print('Error, transform is not "v1" or "v2". Choose which kinect you use.')
+            return
 
         cap = cv2.VideoCapture(file_path)
         if not cap.isOpened():
@@ -940,12 +1104,17 @@ def archived_crop_video_and_depth(behavior_folder, rectangle=None):
             ret, frame = cap.read()
             if not ret:
                 break
-            frame = cv2.warpAffine(frame, affine_matrix_cv2, (frame.shape[1], frame.shape[0]))
+            if transform == 'v1':
+                frame = cv2.warpAffine(frame, affine_matrix_cv2, (frame.shape[1], frame.shape[0]))
+            elif transform == 'v2':
+                frame = cv2.warpAffine(frame, affine_matrix_cv2, (frame.shape[1]+offset[0], frame.shape[0]))
+
             cropped_frame = crop_image(frame, rectangle)
             out.write(cropped_frame)
         cap.release()
         out.release()
-        print(f"Output saved to {output_path}")
+        if verbose:
+            print(f"Output saved to {output_path}")
 
     video_path = os.path.join(behavior_folder, "bg_sub_video.avi")
     depth_path = os.path.join(behavior_folder, "depth.avi")
@@ -965,8 +1134,9 @@ def archived_crop_video_and_depth(behavior_folder, rectangle=None):
     output_depth_path = os.path.join(os.path.dirname(depth_path), "cropped_depth.avi")
 
     process_video(video_path, output_video_path, roi)
-    process_depth(depth_path, output_depth_path, roi)
+    process_depth(depth_path, output_depth_path, roi, trsfm = transform)
 
+    return None
 
 def archived_substract_background(video_path, background_path):
     video_path += "/video.avi"
@@ -1310,3 +1480,43 @@ def archived_crop_video_and_depth_first_one(behavior_folder):
     print(f"Output depth saved to {output_depth_path}")
 
     return None
+
+
+
+def archived_open_coords(dataset_list, experiment_time=600, camera_freq=30):
+    # Creates coords and padding array. If padding is negative, it means array has been cropped. If positive, it has
+    # been padded to account for frame loss.
+
+    n_datasets = len(dataset_list)
+    coord_stack = np.zeros((experiment_time * camera_freq, 3, n_datasets))
+    padding = np.zeros(n_datasets)
+
+    for i in range(n_datasets):
+        coord_dict = load_dict(dataset_list[i] + "/metadata.pkl")
+        coord = coord_dict['coords']
+
+        # Calculate how much padding is needed
+        padding_needed = coord_stack.shape[0] - coord.shape[0]
+        padding[i] = padding_needed
+
+        if padding_needed > 0:
+
+            # Pad the array with the edge value
+            coord_padded = np.pad(coord, ((0, padding_needed), (0, 0)), mode='edge')
+            if padding_needed > 50:
+                print(dataset_list[i].split('/')[
+                          -1] + f" is too short. It's {int(padding[i])} values shorter that normal.")
+
+        elif padding_needed < 0:
+
+            # Crops the start of array
+            coord_padded = coord[-padding_needed:, :]
+
+        else:
+
+            coord_padded = coord
+
+        # Assign the padded coord to the right place in coord_stack
+        coord_stack[:, :, i] = coord_padded
+
+    return coord_stack, padding
