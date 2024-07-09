@@ -204,6 +204,35 @@ def select_mask(image, colorline = 'black'):
     return mask
 
 
+import numpy as np
+from scipy.signal import medfilt
+
+
+def intensity_bounds_v2(im, percentile=0.05):
+    """
+    Adjusts the intensity values of an image based on given percentiles and rescales the image to 8-bit.
+
+    Args:
+    im (np.array): The input image loaded with cv2.IMREAD_UNCHANGED.
+    percentile (float): The percentile for clipping the intensity values (default is 0.05 for 5-95% range).
+
+    Returns:
+    np.array: The rescaled 8-bit image.
+    """
+    # Calculate the lower and upper percentile bounds
+    vmin = np.percentile(im, percentile * 100)
+    vmax = np.percentile(im, (1 - percentile) * 100)
+
+    # Clip the image values to the percentile bounds
+    clipped_im = np.clip(im, vmin, vmax)
+
+    # Rescale the image to the 0-255 range
+    rescaled_im = ((clipped_im - vmin) / (vmax - vmin) * 255).astype(np.uint8)
+
+    return rescaled_im
+
+
+
 def obtain_cortical_map(structure='Isocortex'):
     rsp, tree = open_AllenSDK()
     isocortex_map, id_name_dict, _ = map_generator(rsp, tree, structure='Isocortex')
@@ -555,10 +584,10 @@ def registration(surgery_img_path, data_folder, data_file, overwrite = False, di
     # 2nd registration step: Overlays surgery image and data on one another ton link them by a transform.
 
     window_layer = cv2.imread(data_file)
-    window_layer, _, _ = intensity_bounds(window_layer)
+    window_layer = intensity_bounds_v2(window_layer)
 
     # overlay_parameters is a tuple of x_offset, y_offset and scale_percent parameters for the mask_folder function.
-    overlay_parameters = overlay(surgery_image, window_layer)
+    overlay_parameters = overlay_v2(surgery_image, window_layer)
 
     # Creates a brain mask that will crop masks to only include regions inside the brain window.
 
@@ -576,3 +605,114 @@ def registration(surgery_img_path, data_folder, data_file, overwrite = False, di
 
     mask_folder(data_folder, ants_surgery_mask, adjusted_brain_mask, window_layer, overlay_parameters, isocortex_map,
                 mask_list, transform, overwrite=overwrite)
+
+def identify_files(path, keywords):
+    items = os.listdir(path)
+    files = []
+    for item in items:
+        if all(keyword in item for keyword in keywords):
+            files.append(item)
+    return files
+
+
+def normalize_image(img):
+    """
+    Normalize the image to the 0-255 range based on percentiles.
+
+    Args:
+    img (np.array): The input image.
+    percentile (float): The percentile for clipping the intensity values.
+
+    Returns:
+    np.array: The normalized image.
+    """
+    vmin = np.min(img)
+    vmax = np.max(img)
+
+    # Rescale the image to the 0-255 range
+    normalized_img = ((img - vmin) / (vmax - vmin) * 255).astype(np.uint8)
+
+    return normalized_img
+
+
+def overlay_v2(img1, img2):
+    # Normalize both images to 0-255 range
+    img1_normalized = normalize_image(img1)
+    img2_normalized = img2
+
+
+
+    # Create a window to display the images
+    cv2.namedWindow('Image')
+
+    # Initialize variables
+    x_offset = 0
+    y_offset = 0
+    scale_percent = 100
+    dragging = False
+    resizing = False
+    corner_size = 20
+    update_needed = True
+    vmin=0
+    vmax=255
+
+    # Define the mouse callback function
+    def mouse_callback(event, x, y, flags, param):
+        nonlocal x_offset, y_offset, scale_percent, dragging, resizing, update_needed
+
+        if event == cv2.EVENT_LBUTTONDOWN:
+            if x > x_offset - corner_size and x < x_offset + corner_size and y > y_offset - corner_size and y < y_offset + corner_size:
+                resizing = True
+            else:
+                dragging = True
+        elif event == cv2.EVENT_MOUSEMOVE:
+            if dragging or resizing:
+                update_needed = True
+                if dragging:
+                    x_offset += x - param[0]
+                    y_offset += y - param[1]
+                elif resizing:
+                    scale_percent += (x - param[0]) / 10
+        elif event == cv2.EVENT_LBUTTONUP:
+            dragging = False
+            resizing = False
+
+        param[0] = x
+        param[1] = y
+
+    # Set the mouse callback function
+    cv2.setMouseCallback('Image', mouse_callback, [0, 0])
+
+    while True:
+        if update_needed:
+            # Resize img2
+            width = int(img2_normalized.shape[1] * scale_percent / 100)
+            height = int(img2_normalized.shape[0] * scale_percent / 100)
+            dim = (width, height)
+            resized_img2 = cv2.resize(img2_normalized, dim, interpolation=cv2.INTER_AREA)
+
+            # Create the overlay image
+            overlay = img1_normalized.copy()
+            y1, y2 = y_offset, y_offset + resized_img2.shape[0]
+            x1, x2 = x_offset, x_offset + resized_img2.shape[1]
+
+            if y1 < 0 or x1 < 0 or y2 > overlay.shape[0] or x2 > overlay.shape[1]:
+                continue
+
+            overlay[y1:y2, x1:x2] = cv2.addWeighted(overlay[y1:y2, x1:x2], 0.5, resized_img2, 0.5, 0)
+
+            # Draw the dots at the corners
+            cv2.circle(overlay, (x_offset, y_offset), 5, (0, 0, 0), -1)
+
+            # Show the image
+            cv2.imshow('Image', overlay)
+            update_needed = False
+
+        # Break the loop when the 'q' key is pressed
+        if cv2.waitKey(10) & 0xFF == 27:
+            break
+
+    # Release the resources and close the window
+    cv2.destroyAllWindows()
+
+    return x_offset, y_offset, scale_percent
